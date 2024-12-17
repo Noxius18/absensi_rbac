@@ -48,36 +48,55 @@ if ($user_role == 1) {
     ");
     $stmt->execute(['user_id' => $user_id]);
     $absensi = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
-    // Proses Check In
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'check_in') {
-        $project_id = $_POST['project_id'];
+// Proses Check In
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'check_in') {
+    $project_id = $_POST['project_id'];
 
-        // Cek apakah user sudah melakukan check-in
-        $stmt = $pdo->prepare("SELECT * FROM Absensi WHERE user_id = :user_id AND project_id = :project_id AND check_out IS NULL");
+    // Cek apakah user sudah check-in hari ini di proyek manapun
+    $stmt = $pdo->prepare("
+        SELECT * 
+        FROM Absensi 
+        WHERE user_id = :user_id 
+          AND DATE(check_in) = CURDATE()
+    ");
+    $stmt->execute(['user_id' => $user_id]);
+    $existing_absensi = $stmt->fetch();
+
+    if (!$existing_absensi) {
+        // Jika belum absen, lakukan check-in
+        $stmt = $pdo->prepare("INSERT INTO Absensi (user_id, project_id, check_in) VALUES (:user_id, :project_id, NOW())");
         $stmt->execute(['user_id' => $user_id, 'project_id' => $project_id]);
-        $existing_absensi = $stmt->fetch();
-
-        if (!$existing_absensi) {
-            // Lakukan check-in
-            $stmt = $pdo->prepare("INSERT INTO Absensi (user_id, project_id, check_in) VALUES (:user_id, :project_id, NOW())");
-            $stmt->execute(['user_id' => $user_id, 'project_id' => $project_id]);
-            header('Location: absensi.php');
-            exit;
-        } else {
-            echo "<script>alert('Anda sudah melakukan check-in!');</script>";
-        }
-    }
-
-    // Proses Check Out
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'check_out') {
-        $absensi_id = $_POST['absensi_id'];
-
-        // Lakukan check-out
-        $stmt = $pdo->prepare("UPDATE Absensi SET check_out = NOW() WHERE absensi_id = :absensi_id AND user_id = :user_id");
-        $stmt->execute(['absensi_id' => $absensi_id, 'user_id' => $user_id]);
         header('Location: absensi.php');
         exit;
+    } else {
+        // Jika sudah check-in, tampilkan pesan
+        echo "<script>alert('Anda sudah melakukan check-in hari ini!');</script>";
+    }
+}
+
+// Proses Check Out
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'check_out') {
+    $absensi_id = $_POST['absensi_id'];
+
+    $stmt = $pdo->prepare("UPDATE Absensi SET check_out = NOW() WHERE absensi_id = :absensi_id AND user_id = :user_id");
+    $stmt->execute(['absensi_id' => $absensi_id, 'user_id' => $user_id]);
+    header('Location: absensi.php');
+    exit;
+}
+
+// Proses Hapus Absensi (Admin dan Project Manager)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_absensi') {
+    $absensi_id = $_POST['absensi_id'];
+
+    if ($user_role == 1 || $user_role == 2) {
+        $stmt = $pdo->prepare("DELETE FROM Absensi WHERE absensi_id = :absensi_id");
+        $stmt->execute(['absensi_id' => $absensi_id]);
+        header('Location: absensi.php');
+        exit;
+    } else {
+        echo "<script>alert('Anda tidak memiliki izin untuk menghapus data ini!');</script>";
     }
 }
 ?>
@@ -104,9 +123,7 @@ if ($user_role == 1) {
             <th class="px-4 py-2 border border-gray-300">Nama Proyek</th>
             <th class="px-4 py-2 border border-gray-300">Check In</th>
             <th class="px-4 py-2 border border-gray-300">Check Out</th>
-            <?php if ($user_role == 1 || $user_role == 2 || $user_role == 3): ?>
-                <th class="px-4 py-2 border border-gray-300">Aksi</th>
-            <?php endif; ?>
+            <th class="px-4 py-2 border border-gray-300">Aksi</th>
         </tr>
         </thead>
         <tbody>
@@ -122,10 +139,14 @@ if ($user_role == 1) {
                     <?php if ($user_role == 3 && !$row['check_out']): ?>
                         <form method="POST" class="inline">
                             <input type="hidden" name="absensi_id" value="<?php echo $row['absensi_id']; ?>">
-                            <button name="action" value="check_out" type="submit"
-                                    class="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
-                                Check Out
-                            </button>
+                            <button name="action" value="check_out" type="submit" class="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">Check Out</button>
+                        </form>
+                    <?php endif; ?>
+
+                    <?php if ($user_role == 1 || $user_role == 2): ?>
+                        <form method="POST" class="inline">
+                            <input type="hidden" name="absensi_id" value="<?php echo $row['absensi_id']; ?>">
+                            <button name="action" value="delete_absensi" type="submit" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600">Hapus</button>
                         </form>
                     <?php endif; ?>
                 </td>
@@ -141,8 +162,7 @@ if ($user_role == 1) {
             <input type="hidden" name="action" value="check_in">
             <div>
                 <label for="project_id" class="block text-gray-700 font-semibold">Pilih Proyek</label>
-                <select name="project_id" id="project_id" required
-                        class="block w-full mt-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                <select name="project_id" id="project_id" required class="block w-full mt-1 p-2 border border-gray-300 rounded-md">
                     <option value="">-- Pilih Proyek --</option>
                     <?php
                     $stmt = $pdo->prepare("SELECT project_id, project_name FROM Projects");
@@ -153,17 +173,7 @@ if ($user_role == 1) {
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="flex justify-between items-center mt-6">
-                <button 
-                    type="submit" 
-                    class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    Check In
-                </button>
-                <a href="dashboard.php" 
-                    class="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    Back to Dashboard
-                </a>
-            </div>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Check In</button>
         </form>
     <?php endif; ?>
 </div>

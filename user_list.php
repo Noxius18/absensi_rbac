@@ -9,6 +9,33 @@ if (!isset($_SESSION['user_id']) || !hasPermission('users', 'view')) {
     exit;
 }
 
+// Hapus User
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $user_id = $_POST['user_id'];
+
+    $stmt = $pdo->prepare("DELETE FROM Users WHERE user_id = :user_id");
+    $stmt->execute(['user_id' => $user_id]);
+
+    header('Location: user_list.php');
+    exit;
+}
+
+// Edit Status User
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_status') {
+    $user_id = $_POST['user_id'];
+    $status = $_POST['status'];
+
+    $stmt = $pdo->prepare("UPDATE Users SET status = :status WHERE user_id = :user_id");
+    $stmt->execute([
+        'status' => $status,
+        'user_id' => $user_id
+    ]);
+
+    header('Location: user_list.php');
+    exit;
+}
+
+// Ambil Data User
 $stmt = $pdo->prepare("
     SELECT Users.user_id AS ID, 
            Users.username AS Nama, 
@@ -43,6 +70,7 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <th class="px-4 py-2 border border-gray-300">Email</th>
                 <th class="px-4 py-2 border border-gray-300">Role</th>
                 <th class="px-4 py-2 border border-gray-300">Status</th>
+                <th class="px-4 py-2 border border-gray-300">Aksi</th>
             </tr>
         </thead>
         <tbody>
@@ -53,9 +81,24 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <td class="px-4 py-2 border border-gray-300"><?php echo htmlspecialchars($user['Email']); ?></td>
                     <td class="px-4 py-2 border border-gray-300"><?php echo htmlspecialchars($user['Role']); ?></td>
                     <td class="px-4 py-2 border border-gray-300 text-center">
-                        <span class="<?php echo $user['Status'] == 'aktif' ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold' ?>";>
-                            <?php echo htmlspecialchars($user['Status']); ?>
-                        </span>
+                        <form action="user_list.php" method="POST" class="inline-block">
+                            <input type="hidden" name="user_id" value="<?php echo $user['ID']; ?>">
+                            <input type="hidden" name="action" value="edit_status">
+                            <select name="status" onchange="this.form.submit()" class="bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                                <option value="aktif" <?php echo $user['Status'] === 'aktif' ? 'selected' : ''; ?>>Aktif</option>
+                                <option value="nonaktif" <?php echo $user['Status'] === 'nonaktif' ? 'selected' : ''; ?>>Nonaktif</option>
+                            </select>
+                        </form>
+                    </td>
+                    <td class="px-4 py-2 border border-gray-300 text-center">
+                        <!-- Tombol Hapus -->
+                        <form action="user_list.php" method="POST" class="inline-block">
+                            <input type="hidden" name="user_id" value="<?php echo $user['ID']; ?>">
+                            <input type="hidden" name="action" value="delete">
+                            <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600">
+                                Hapus
+                            </button>
+                        </form>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -63,13 +106,8 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </table>
 
     <div class="flex justify-between items-center mt-6">
-        <button 
-            type="submit" 
-            class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            Update Permissions
-        </button>
         <a href="dashboard.php" 
-            class="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500">
+           class="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500">
             Back to Dashboard
         </a>
     </div>

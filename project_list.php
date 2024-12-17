@@ -9,6 +9,13 @@ if (!isset($_SESSION['user_id']) || !hasPermission('projects', 'view')) {
     exit;
 }
 
+$user_id = $_SESSION['user_id'];
+
+// Cek role user
+$stmt = $pdo->prepare("SELECT role_id FROM Users WHERE user_id = :user_id");
+$stmt->execute(['user_id' => $user_id]);
+$user_role = $stmt->fetchColumn(); // Ambil role ID pengguna
+
 // Tambah Proyek
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
     $manager_id = $_POST['manager_id'];
@@ -16,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $start_date = $_POST['start_date'];
     $end_date = $_POST['end_date'];
 
-    $stmt = $pdo->prepare("INSERT INTO Projects (manager_id, project_name, start_date, end_data) 
+    $stmt = $pdo->prepare("INSERT INTO Projects (manager_id, project_name, start_date, end_date) 
                            VALUES (:manager_id, :project_name, :start_date, :end_date)");
     $stmt->execute([
         'manager_id' => $manager_id,
@@ -29,52 +36,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Update Proyek
-// if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
-//     $project_id = $_POST['project_id'];
-//     $manager_id = $_POST['manager_id'];
-//     $project_name = $_POST['project_name'];
-//     $start_date = $_POST['start_date'];
-//     $end_date = $_POST['end_date'];
+// Hapus Proyek (Hanya Admin dan Project Manager)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $project_id = $_POST['project_id'];
 
-//     $stmt = $pdo->prepare("UPDATE Projects 
-//                            SET manager_id = :manager_id, project_name = :project_name, 
-//                            start_date = :start_date, end_data = :end_date 
-//                            WHERE project_id = :project_id");
-//     $stmt->execute([
-//         'manager_id' => $manager_id,
-//         'project_name' => $project_name,
-//         'start_date' => $start_date,
-//         'end_date' => $end_date,
-//         'project_id' => $project_id
-//     ]);
+    if ($user_role == 1 || $user_role == 2) { // Admin atau Project Manager
+        $stmt = $pdo->prepare("DELETE FROM Projects WHERE project_id = :project_id");
+        $stmt->execute(['project_id' => $project_id]);
+        header('Location: project_list.php');
+        exit;
+    } else {
+        echo "<script>alert('Anda tidak memiliki izin untuk menghapus proyek!');</script>";
+    }
+}
 
-//     header('Location: project_edit.php');
-//     exit;
-// }
+// Fetch Proyek berdasarkan role
+if ($user_role == 1) {
+    // Admin: Bisa melihat semua proyek
+    $stmt = $pdo->prepare("
+        SELECT p.project_id, p.project_name, p.start_date, p.end_date, u.username AS manager 
+        FROM Projects p 
+        JOIN Users u ON p.manager_id = u.user_id
+    ");
+} elseif ($user_role == 2) {
+    // Project Manager: Hanya melihat proyek yang dikelola
+    $stmt = $pdo->prepare("
+        SELECT p.project_id, p.project_name, p.start_date, p.end_date, u.username AS manager 
+        FROM Projects p 
+        JOIN Users u ON p.manager_id = u.user_id
+        WHERE p.manager_id = :user_id
+    ");
+    $stmt->execute(['user_id' => $user_id]);
+} else {
+    // Worker: Tidak memiliki akses ke proyek
+    $projects = [];
+}
 
-// Hapus Proyek
-// if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
-//     $project_id = $_POST['project_id'];
-
-//     $stmt = $pdo->prepare("DELETE FROM Projects WHERE project_id = :project_id");
-//     $stmt->execute(['project_id' => $project_id]);
-
-//     header('Location: project_list.php');
-//     exit;
-// }
-
-// Fetch Proyek dan Manajer
-$stmt = $pdo->prepare("
-    SELECT p.project_id, p.project_name, p.start_date, p.end_data, u.username AS manager 
-    FROM Projects p 
-    JOIN Users u ON p.manager_id = u.user_id
-");
-$stmt->execute();
+// Eksekusi query untuk mendapatkan proyek
+if ($user_role == 1) {
+    $stmt->execute();
+}
 $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$stmt = $pdo->prepare("SELECT user_id, username FROM Users WHERE role_id = 2");
-$stmt->execute();
+// Ambil daftar manajer
+if ($user_role == 1) {
+    // Admin: Ambil semua manajer
+    $stmt = $pdo->prepare("SELECT user_id, username FROM Users WHERE role_id = 2");
+} elseif ($user_role == 2) {
+    // Project Manager: Hanya ambil diri sendiri
+    $stmt = $pdo->prepare("SELECT user_id, username FROM Users WHERE user_id = :user_id");
+    $stmt->execute(['user_id' => $user_id]);
+}
 $managers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -83,7 +95,7 @@ $managers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Projects</title>
+    <title>Daftar Proyek</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100 font-sans">
@@ -100,7 +112,9 @@ $managers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <th class="px-4 py-2 border border-gray-300">Manajer</th>
                 <th class="px-4 py-2 border border-gray-300">Tanggal Mulai</th>
                 <th class="px-4 py-2 border border-gray-300">Tanggal Berakhir</th>
-                <!-- <th class="px-4 py-2 border border-gray-300">Aksi</th> -->
+                <?php if ($user_role == 1 || $user_role == 2): ?>
+                    <th class="px-4 py-2 border border-gray-300">Aksi</th>
+                <?php endif; ?>
             </tr>
         </thead>
         <tbody>
@@ -110,23 +124,19 @@ $managers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <td class="px-4 py-2 border border-gray-300"><?php echo htmlspecialchars($project['project_name']); ?></td>
                     <td class="px-4 py-2 border border-gray-300"><?php echo htmlspecialchars($project['manager']); ?></td>
                     <td class="px-4 py-2 border border-gray-300 text-center"><?php echo htmlspecialchars($project['start_date']); ?></td>
-                    <td class="px-4 py-2 border border-gray-300 text-center"><?php echo htmlspecialchars($project['end_data']); ?></td>
-                    <!-- <td class="px-4 py-2 border border-gray-300 text-center">
-                        <form action="project_list.php" method="POST" class="inline">
-                            <input type="hidden" name="project_id" value="<?php echo $project['project_id']; ?>">
-                            <button name="action" value="update" type="button" 
-                                class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600">
-                                Edit
-                            </button>
-                        </form>
-                        <form method="POST" class="inline">
-                            <input type="hidden" name="project_id" value="<?php echo $project['project_id']; ?>">
-                            <button name="action" value="delete" type="submit" 
-                                class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600">
-                                Hapus
-                            </button>
-                        </form>
-                    </td> -->
+                    <td class="px-4 py-2 border border-gray-300 text-center"><?php echo htmlspecialchars($project['end_date']); ?></td>
+                    <?php if ($user_role == 1 || $user_role == 2): ?>
+                        <td class="px-4 py-2 border border-gray-300 text-center">
+                            <!-- Tombol Hapus -->
+                            <form method="POST" class="inline">
+                                <input type="hidden" name="project_id" value="<?php echo $project['project_id']; ?>">
+                                <button name="action" value="delete" type="submit" 
+                                    class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 focus:outline-none">
+                                    Hapus
+                                </button>
+                            </form>
+                        </td>
+                    <?php endif; ?>
                 </tr>
             <?php endforeach; ?>
         </tbody>
@@ -147,7 +157,9 @@ $managers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     class="block w-full mt-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                 <option value="">-- Pilih Manajer --</option>
                 <?php foreach ($managers as $manager): ?>
-                    <option value="<?php echo $manager['user_id']; ?>"><?php echo htmlspecialchars($manager['username']); ?></option>
+                    <option value="<?php echo $manager['user_id']; ?>" <?php if ($user_role == 2 && $manager['user_id'] == $user_id) echo 'selected'; ?>>
+                        <?php echo htmlspecialchars($manager['username']); ?>
+                    </option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -158,20 +170,19 @@ $managers = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
         <div>
             <label for="end_date" class="block text-gray-700 font-semibold">Tanggal Berakhir</label>
-            <input type="date" name="end_date" id="end_date" required 
+            <input type="date" name="end_date" id="end _date" required 
                    class="block w-full mt-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
         </div>
         <div class="flex justify-between items-center mt-6">
-        <button 
-            type="submit" 
-            class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            Tambah Proyek
-        </button>
-        <a href="dashboard.php" 
-            class="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500">
-            Back to Dashboard
-        </a>
-    </div>
+            <button type="submit" 
+                    class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                Tambah Proyek
+            </button>
+            <a href="dashboard.php" 
+               class="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500">
+                Kembali ke Dashboard
+            </a>
+        </div>
     </form>
 </div>
 

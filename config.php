@@ -2,9 +2,9 @@
 
 $host = '127.0.0.1';
 $dbname = 'absensi';
-$user = 'absen';
-$pass = 'absen123'; 
-$port = '3308';// Nanti dihapus pas disisi produksi
+$user = 'root';
+$pass = '';     
+$port = '3306';// Nanti dihapus pas disisi produksi
 
 try {
     $pdo = new PDO("mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4", $user, $pass);
